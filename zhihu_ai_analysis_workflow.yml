@@ -1,0 +1,564 @@
+app:
+  mode: workflow
+  name: 知乎AI问答分析器
+  description: 从知乎JSONL回答中批量评分、筛选高价值回答，提炼分类AI技巧指南
+  icon: 📊
+  icon_background: '#1E64F0'
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.1.5
+workflow:
+  version: 0.1.0
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: true
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+  graph:
+    nodes:
+    - id: start
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 80
+        y: 300
+      positionAbsolute:
+        x: 80
+        y: 300
+      data:
+        type: start
+        title: 开始 - 输入JSONL
+        variables:
+        - label: raw_jsonl
+          variable: raw_jsonl
+          required: true
+          type: paragraph
+          max_length: 500000
+          options: []
+        - label: question_title
+          variable: question_title
+          required: false
+          type: text
+          max_length: 500
+          options: []
+        desc: ''
+        selected: false
+    - id: code-parse
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 380
+        y: 300
+      positionAbsolute:
+        x: 380
+        y: 300
+      data:
+        type: code
+        title: 解析JSONL & 预过滤
+        code_language: python3
+        code: "def main(raw_jsonl: str, question_title: str = '') -> dict:\n    import\
+          \ json\n    answers = []\n    question = question_title\n    lines = raw_jsonl.strip().split('\\\
+          n')\n    for line in lines:\n        if not line.strip():\n            continue\n\
+          \        try:\n            obj = json.loads(line)\n        except json.JSONDecodeError:\n\
+          \            continue\n        content = obj.get('content', '') or obj.get('text',\
+          \ '') or obj.get('answer', '')\n        if len(content) < 80:\n        \
+          \    continue\n        if len(content) > 8000:\n            content = content[:8000]\n\
+          \        answers.append({\n            'id': str(obj.get('id', f'a{len(answers)}')),\n\
+          \            'author': str(obj.get('author', '') or obj.get('name', '匿名')),\n\
+          \            'content': content,\n            'upvotes': int(obj.get('upvotes',\
+          \ 0) or obj.get('vote_count', 0) or obj.get('likes', 0)),\n        })\n\
+          \        if not question and obj.get('question'):\n            question\
+          \ = str(obj['question'])\n    answers.sort(key=lambda x: x['upvotes'], reverse=True)\n\
+          \    total = len(answers)\n    batch_size = 25\n    batches = []\n    for\
+          \ i in range(0, total, batch_size):\n        batch = answers[i:i + batch_size]\n\
+          \        batches.append(json.dumps({\n            'batch_id': i // batch_size\
+          \ + 1,\n            'total': (total + batch_size - 1) // batch_size,\n \
+          \           'answers': batch\n        }, ensure_ascii=False))\n    return\
+          \ {\n        'total_raw': len(lines),\n        'after_filter': total,\n\
+          \        'batches': batches,\n        'answers_all': json.dumps(answers,\
+          \ ensure_ascii=False),\n        'question': question or '关于使用AI的技巧',\n \
+          \   }\n"
+        variables:
+        - variable: raw_jsonl
+          value_selector:
+          - start
+          - raw_jsonl
+        - variable: question_title
+          value_selector:
+          - start
+          - question_title
+        outputs:
+          total_raw:
+            type: number
+            children: null
+          after_filter:
+            type: number
+            children: null
+          batches:
+            type: array[string]
+            children: null
+          answers_all:
+            type: string
+            children: null
+          question:
+            type: string
+            children: null
+        desc: ''
+        selected: false
+    - id: iter-batch-score
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 680
+        y: 300
+      positionAbsolute:
+        x: 680
+        y: 300
+      data:
+        type: iteration
+        title: 批量评分 (每批25条)
+        isInIteration: false
+        startNodeType: start
+        start_node_id: start-batch
+        iterator_selector:
+        - code-parse
+        - batches
+        output_selector:
+        - llm-score-batch
+        - text
+        children:
+          nodes:
+          - id: start-batch
+            type: custom
+            width: 244
+            height: 54
+            position:
+              x: 80
+              y: 162
+            positionAbsolute:
+              x: 80
+              y: 162
+            data:
+              type: start
+              title: 每批开始
+              variables:
+              - label: batch_json
+                variable: batch_json
+                required: true
+                type: text
+                max_length: 200000
+                options: []
+              desc: ''
+              selected: false
+          - id: llm-score-batch
+            type: custom
+            width: 244
+            height: 98
+            position:
+              x: 380
+              y: 162
+            positionAbsolute:
+              x: 380
+              y: 162
+            data:
+              type: llm
+              title: LLM评分
+              model:
+                provider: openai
+                name: gpt-4o-mini
+                mode: chat
+                completion_params:
+                  temperature: 0.3
+              prompt_template:
+              - id: f4c89d70-0bdd-57c5-a266-60856bc74177
+                role: system
+                text: '你是内容质量评估专家。对一批知乎回答逐个打分（1-10分）。
+
+
+                  评分标准：
+
+                  9-10分：原创深度经验，具体可操作，有独特视角
+
+                  7-8分：有实质内容，经验真实，比较详细
+
+                  5-6分：泛泛而谈，有一点信息量但不够深入
+
+                  3-4分：空洞重复，几乎没有新信息
+
+                  1-2分：垃圾广告、灌水、完全无关
+
+
+                  输出严格JSON数组（不要markdown代码块，不要任何其他文字）：
+
+                  [{"id":"回答ID","score":8,"summary":"15字以内要点概括"}]
+
+                  每个回答必须有id、score、summary三个字段。只输出JSON数组本身。'
+              - id: 7b55fb7a-1146-556a-af4e-118933a309b5
+                role: user
+                text: '请为以下这批知乎回答逐条评分，输出JSON数组：
+
+
+                  {{#start-batch.batch_json#}}'
+              context:
+                enabled: false
+                variable_selector: []
+              memory:
+                role_prefix:
+                  user: ''
+                  assistant: ''
+                window:
+                  enabled: false
+                  size: 10
+              variables: []
+              desc: ''
+              selected: false
+          edges:
+          - id: e-batch-inner
+            source: start-batch
+            target: llm-score-batch
+            sourceHandle: source
+            targetHandle: target
+            type: custom
+            zIndex: 0
+            data:
+              isInIteration: true
+              sourceType: start
+              targetType: llm
+        variables: []
+        desc: ''
+        selected: false
+    - id: code-aggregate
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 980
+        y: 100
+      positionAbsolute:
+        x: 980
+        y: 100
+      data:
+        type: code
+        title: 汇总评分 & 精筛Top80
+        code_language: python3
+        code: "def main(iter_output: list, answers_all: str) -> dict:\n    import\
+          \ json\n    all_scored = []\n    for text in (iter_output or []):\n    \
+          \    t = text.strip()\n        if t.startswith('```'):\n            t =\
+          \ t.strip('`').replace('json', '', 1).strip()\n        try:\n          \
+          \  batch = json.loads(t)\n        except:\n            continue\n      \
+          \  if isinstance(batch, list):\n            all_scored.extend(batch)\n \
+          \   all_scored.sort(key=lambda x: x.get('score', 0), reverse=True)\n   \
+          \ top80 = all_scored[:80]\n    top_ids = {item['id'] for item in top80}\n\
+          \    try:\n        answers = json.loads(answers_all)\n    except:\n    \
+          \    answers = []\n    top_answers = [a for a in answers if a.get('id')\
+          \ in top_ids]\n    id_order = {item['id']: i for i, item in enumerate(top80)}\n\
+          \    top_answers.sort(key=lambda a: id_order.get(a.get('id'), 999))\n  \
+          \  dist = {}\n    for item in all_scored:\n        s = item.get('score',\
+          \ 0)\n        dist[str(s)] = dist.get(str(s), 0) + 1\n    ranked_md = '#\
+          \ 知乎AI技巧回答 — 价值排名\\n\\n'\n    ranked_md += f'共评估 {len(all_scored)} 条回答，原始\
+          \ {len(answers)} 条\\n\\n'\n    ranked_md += '| 排名 | 回答ID | 评分 | 摘要 |\\n|------|--------|------|------|\\\
+          n'\n    for i, item in enumerate(top80[:50], 1):\n        ranked_md += f\"\
+          | {i} | {item['id']} | {item['score']}/10 | {item.get('summary', '')} |\\\
+          n\"\n    top_contents = []\n    for a in top_answers[:80]:\n        top_contents.append(\n\
+          \            f\"### [{a.get('id')}] {a.get('author', '匿名')} (赞同{a.get('upvotes',\
+          \ 0)})\\n\"\n            f\"{a.get('content', '')}\\n\"\n        )\n   \
+          \ return {\n        'top80_ids': list(top_ids)[:80],\n        'ranked_markdown':\
+          \ ranked_md,\n        'top_contents': '\\n---\\n'.join(top_contents),\n\
+          \        'score_distribution': json.dumps(dist, ensure_ascii=False),\n \
+          \       'total_evaluated': len(all_scored),\n        'avg_score': round(sum(i.get('score',\
+          \ 0) for i in all_scored) / max(len(all_scored), 1), 1),\n    }\n"
+        variables:
+        - variable: iter_output
+          value_selector:
+          - iter-batch-score
+          - output
+        - variable: answers_all
+          value_selector:
+          - code-parse
+          - answers_all
+        outputs:
+          top80_ids:
+            type: array[string]
+            children: null
+          ranked_markdown:
+            type: string
+            children: null
+          top_contents:
+            type: string
+            children: null
+          score_distribution:
+            type: string
+            children: null
+          total_evaluated:
+            type: number
+            children: null
+          avg_score:
+            type: number
+            children: null
+        desc: ''
+        selected: false
+    - id: llm-deep-analysis
+      type: custom
+      width: 244
+      height: 98
+      position:
+        x: 680
+        y: 500
+      positionAbsolute:
+        x: 680
+        y: 500
+      data:
+        type: llm
+        title: 深度提炼 & 分类合成
+        model:
+          provider: openai
+          name: gpt-4o
+          mode: chat
+          completion_params:
+            temperature: 0.5
+        prompt_template:
+        - id: 4352716b-d6a0-5d7a-a309-37d8b54c09d6
+          role: system
+          text: '你是AI使用技巧的研究员和内容策划。请分析以下知乎高评分回答，完成两个任务：
+
+
+            ## 任务1：按类别整理AI使用技巧
+
+            将提取的技巧归入以下类别（同类合并去重）：
+
+            - 📝 写作与内容创作
+
+            - 💻 编程与开发
+
+            - 🎨 设计与创意
+
+            - 📊 数据分析与研究
+
+            - ⚡ 效率与自动化
+
+            - 🎯 提示词工程 (Prompt Engineering)
+
+            - 🧠 学习与教育
+
+            - 💼 职场与商业
+
+            - 🔧 工具与插件推荐
+
+            - 🏆 综合/其他
+
+
+            每个技巧格式：
+
+            - **技巧名称** (来源回答ID, 赞同数): 具体操作描述 | 适用场景 | 难度⭐~⭐⭐⭐
+
+
+            ## 任务2：生成综合指南
+
+            - 提炼出现频率最高的 Top 10 核心技巧
+
+            - 不同水平用户的建议分布（新手/进阶/专家各给什么建议）
+
+            - 「如果只记3条，就记这3条」
+
+
+            输出Markdown格式，层级清晰，可直接阅读发布。'
+        - id: f503738f-5198-50ff-915f-b4d228691fd1
+          role: user
+          text: '以下是知乎问题「{{#code-parse.question#}}」下的高评分回答原文：
+
+
+            {{#code-aggregate.top_contents#}}
+
+
+            请按系统指令中的要求，完成分类整理和综合指南。'
+        context:
+          enabled: false
+          variable_selector: []
+        memory:
+          role_prefix:
+            user: ''
+            assistant: ''
+          window:
+            enabled: false
+            size: 10
+        variables: []
+        desc: ''
+        selected: false
+    - id: template-merge
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 980
+        y: 500
+      positionAbsolute:
+        x: 980
+        y: 500
+      data:
+        type: template-transform
+        title: 合并最终报告
+        template: '{{ranked}}
+
+
+          ---
+
+
+          ## 📊 统计概览
+
+
+          - 原始回答数：**{{total_raw}}** 条
+
+          - 有效筛选后：**{{after_filter}}** 条
+
+          - 综合评估数：**{{evaluated}}** 条
+
+          - 平均评分：**{{avg}}/10**
+
+          - 分数分布：{{dist}}
+
+
+          ---
+
+
+          {{deep_analysis}}'
+        variables:
+        - variable: ranked
+          value_selector:
+          - code-aggregate
+          - ranked_markdown
+        - variable: deep_analysis
+          value_selector:
+          - llm-deep-analysis
+          - text
+        - variable: total_raw
+          value_selector:
+          - code-parse
+          - total_raw
+        - variable: after_filter
+          value_selector:
+          - code-parse
+          - after_filter
+        - variable: evaluated
+          value_selector:
+          - code-aggregate
+          - total_evaluated
+        - variable: avg
+          value_selector:
+          - code-aggregate
+          - avg_score
+        - variable: dist
+          value_selector:
+          - code-aggregate
+          - score_distribution
+        desc: ''
+        selected: false
+    - id: end
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 1280
+        y: 400
+      positionAbsolute:
+        x: 1280
+        y: 400
+      data:
+        type: end
+        title: 输出最终报告
+        outputs:
+        - value_selector:
+          - template-merge
+          - output
+          variable: final_report
+        - value_selector:
+          - code-aggregate
+          - ranked_markdown
+          variable: ranked_list
+        - value_selector:
+          - llm-deep-analysis
+          - text
+          variable: tips_guide
+        desc: ''
+        selected: false
+    edges:
+    - id: e-start-parse
+      source: start
+      target: code-parse
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: start
+        targetType: code
+    - id: e-parse-iter
+      source: code-parse
+      target: iter-batch-score
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: code
+        targetType: iteration
+    - id: e-iter-aggr
+      source: iter-batch-score
+      target: code-aggregate
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: iteration
+        targetType: code
+    - id: e-aggr-deep
+      source: code-aggregate
+      target: llm-deep-analysis
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: code
+        targetType: llm
+    - id: e-deep-template
+      source: llm-deep-analysis
+      target: template-merge
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: llm
+        targetType: template-transform
+    - id: e-template-end
+      source: template-merge
+      target: end
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: template-transform
+        targetType: end
