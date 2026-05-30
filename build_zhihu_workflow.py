@@ -409,6 +409,10 @@ def build() -> dict:
 
 
 if __name__ == "__main__":
+    import os as _os
+    _output_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "output")
+    _os.makedirs(_output_dir, exist_ok=True)
+
     wf = build()
     print("Validating...")
     try:
@@ -417,7 +421,8 @@ if __name__ == "__main__":
             for w in warnings:
                 print(f"  [WARNING] {w}")
         print("[OK] Validation PASSED")
-        save_yaml(wf, "zhihu_ai_analysis_workflow.yml")
+        _output_path = _os.path.join(_output_dir, "zhihu_ai_analysis_workflow.yml")
+        save_yaml(wf, _output_path)
         print(f"  Total nodes: {len(wf['workflow']['graph']['nodes'])}")
         print(f"  Total edges: {len(wf['workflow']['graph']['edges'])}")
     except DifyValidationError as e:
