@@ -1,0 +1,208 @@
+app:
+  mode: workflow
+  name: Test
+  description: ''
+  icon: 🤖
+  icon_background: '#1E64F0'
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.1.5
+workflow:
+  version: 0.1.0
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+  graph:
+    nodes:
+    - id: start
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 80
+        y: 162
+      positionAbsolute:
+        x: 80
+        y: 162
+      data:
+        type: start
+        title: 开始
+        variables:
+        - label: topic
+          variable: topic
+          required: true
+          type: text
+          max_length: 500
+          options: []
+        desc: ''
+        selected: false
+    - id: code-prep
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 380
+        y: 162
+      positionAbsolute:
+        x: 380
+        y: 162
+      data:
+        type: code
+        title: 构造请求参数
+        code_language: python3
+        code: "def main(topic: str) -> dict:\n    import json\n    return {'payload':\
+          \ json.dumps({'q': topic})}\n"
+        variables:
+        - variable: topic
+          value_selector:
+          - start
+          - topic
+        outputs:
+          payload:
+            type: string
+            children: null
+        desc: ''
+        selected: false
+    - id: http-1
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 680
+        y: 162
+      positionAbsolute:
+        x: 680
+        y: 162
+      data:
+        type: http-request
+        title: 调用API
+        method: POST
+        url: https://api.example.com/search
+        authorization:
+          type: bearer
+          config:
+            api_key: '{{env.API_KEY}}'
+        headers: 'Content-Type: application/json'
+        params: ''
+        body:
+          type: json
+          data: '{{#code-prep.payload#}}'
+        desc: ''
+        selected: false
+    - id: llm-1
+      type: custom
+      width: 244
+      height: 98
+      position:
+        x: 980
+        y: 80
+      positionAbsolute:
+        x: 980
+        y: 80
+      data:
+        type: llm
+        title: 解析结果
+        model:
+          provider: openai
+          name: gpt-4o-mini
+          mode: chat
+          completion_params:
+            temperature: 0.5
+        prompt_template:
+        - id: d37882d6-56df-58a8-a3ab-26bd84250631
+          role: system
+          text: Summarize the API results.
+        - id: e874b1b2-08fa-55cc-b5b8-59a9cbb43ef8
+          role: user
+          text: '{{#http-1.body#}}'
+        context:
+          enabled: false
+          variable_selector: []
+        memory:
+          role_prefix:
+            user: ''
+            assistant: ''
+          window:
+            enabled: false
+            size: 10
+        desc: ''
+        selected: false
+    - id: end
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 980
+        y: 280
+      positionAbsolute:
+        x: 980
+        y: 280
+      data:
+        type: end
+        title: 结束
+        outputs:
+        - value_selector:
+          - llm-1
+          - text
+          variable: summary
+        desc: ''
+        selected: false
+    edges:
+    - id: e-s-code
+      source: start
+      target: code-prep
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: start
+        targetType: code
+    - id: e-code-http
+      source: code-prep
+      target: http-1
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: code
+        targetType: http-request
+    - id: e-http-llm
+      source: http-1
+      target: llm-1
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: llm
+    - id: e-llm-end
+      source: llm-1
+      target: end
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: llm
+        targetType: end

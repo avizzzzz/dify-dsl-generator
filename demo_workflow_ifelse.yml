@@ -1,0 +1,214 @@
+app:
+  mode: workflow
+  name: Test
+  description: ''
+  icon: 🤖
+  icon_background: '#1E64F0'
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.1.5
+workflow:
+  version: 0.1.0
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+  graph:
+    nodes:
+    - id: start
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 80
+        y: 162
+      positionAbsolute:
+        x: 80
+        y: 162
+      data:
+        type: start
+        title: 开始
+        variables:
+        - label: input
+          variable: input
+          required: true
+          type: text
+          max_length: 5000
+          options: []
+        desc: ''
+        selected: false
+    - id: ifelse-1
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 380
+        y: 162
+      positionAbsolute:
+        x: 380
+        y: 162
+      data:
+        type: if-else
+        title: 条件判断
+        conditions:
+        - comparison_operator: contains
+          variable_selector:
+          - start
+          - input
+          value: code
+        logical_operator: and
+        desc: ''
+        selected: false
+    - id: code-branch
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 680
+        y: 80
+      positionAbsolute:
+        x: 680
+        y: 80
+      data:
+        type: code
+        title: 代码处理
+        code_language: python3
+        code: "def main(input: str) -> dict:\n    return {'result': input.upper()}\n"
+        variables:
+        - variable: input
+          value_selector:
+          - start
+          - input
+        outputs:
+          result:
+            type: string
+            children: null
+        desc: ''
+        selected: false
+    - id: llm-branch
+      type: custom
+      width: 244
+      height: 98
+      position:
+        x: 680
+        y: 280
+      positionAbsolute:
+        x: 680
+        y: 280
+      data:
+        type: llm
+        title: LLM处理
+        model:
+          provider: openai
+          name: gpt-4o-mini
+          mode: chat
+          completion_params:
+            temperature: 0.7
+        prompt_template:
+        - id: d37882d6-56df-58a8-a3ab-26bd84250631
+          role: system
+          text: Process the input.
+        - id: e874b1b2-08fa-55cc-b5b8-59a9cbb43ef8
+          role: user
+          text: '{{#start.input#}}'
+        context:
+          enabled: false
+          variable_selector: []
+        memory:
+          role_prefix:
+            user: ''
+            assistant: ''
+          window:
+            enabled: false
+            size: 10
+        desc: ''
+        selected: false
+    - id: end
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 980
+        y: 162
+      positionAbsolute:
+        x: 980
+        y: 162
+      data:
+        type: end
+        title: 结束
+        outputs:
+        - value_selector:
+          - code-branch
+          - result
+          variable: output
+        desc: ''
+        selected: false
+    edges:
+    - id: e-s-if
+      source: start
+      target: ifelse-1
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: start
+        targetType: if-else
+    - id: e-if-code
+      source: ifelse-1
+      target: code-branch
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: if-else
+        targetType: code
+    - id: e-if-llm
+      source: ifelse-1
+      target: llm-branch
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: if-else
+        targetType: llm
+    - id: e-code-end
+      source: code-branch
+      target: end
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: code
+        targetType: end
+    - id: e-llm-end
+      source: llm-branch
+      target: end
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: llm
+        targetType: end

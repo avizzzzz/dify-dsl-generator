@@ -1,0 +1,235 @@
+app:
+  mode: workflow
+  name: 异构JSON处理工作流
+  description: 接收raw_json，清洗短文本，迭代提炼AI干货技巧
+  icon: 🤖
+  icon_background: '#1E64F0'
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.1.5
+workflow:
+  version: 0.1.0
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+  graph:
+    nodes:
+    - id: start
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 80
+        y: 162
+      positionAbsolute:
+        x: 80
+        y: 162
+      data:
+        type: start
+        title: 开始
+        desc: ''
+        selected: false
+        variables:
+        - label: raw_json
+          variable: raw_json
+          required: true
+          type: text
+          max_length: 50000
+          options: []
+    - id: code-clean
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 380
+        y: 162
+      positionAbsolute:
+        x: 380
+        y: 162
+      data:
+        type: code
+        title: 清洗JSON提取文本
+        desc: ''
+        selected: false
+        code_language: python3
+        code: "def main(raw_json: str) -> dict:\n    import json\n    data = json.loads(raw_json)\n\
+          \    texts = []\n    for v in data.values():\n        if isinstance(v, str)\
+          \ and len(v.strip()) > 10:\n            texts.append(v.strip())\n    return\
+          \ {'text_array': texts}\n"
+        variables:
+        - variable: raw_json
+          value_selector:
+          - start
+          - raw_json
+        outputs:
+          text_array:
+            type: array[string]
+            children: null
+    - id: iteration-refine
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 680
+        y: 162
+      positionAbsolute:
+        x: 680
+        y: 162
+      data:
+        type: iteration
+        title: 迭代提炼AI干货
+        desc: ''
+        selected: false
+        isInIteration: false
+        startNodeType: start
+        start_node_id: start-iter-inner
+        iterator_selector:
+        - code-clean
+        - text_array
+        output_selector:
+        - llm-iter-inner
+        - text
+        children:
+          nodes:
+          - id: start-iter-inner
+            type: custom
+            width: 244
+            height: 54
+            position:
+              x: 80
+              y: 162
+            positionAbsolute:
+              x: 80
+              y: 162
+            data:
+              type: start
+              title: 开始
+              desc: ''
+              selected: false
+              variables:
+              - label: item
+                variable: item
+                required: true
+                type: text
+                max_length: 10000
+                options: []
+          - id: llm-iter-inner
+            type: custom
+            width: 244
+            height: 98
+            position:
+              x: 380
+              y: 162
+            positionAbsolute:
+              x: 380
+              y: 162
+            data:
+              type: llm
+              title: LLM提炼干货
+              desc: ''
+              selected: false
+              model:
+                provider: openai
+                name: gpt-4o-mini
+                mode: chat
+                completion_params:
+                  temperature: 0.7
+              prompt_template:
+              - id: 5c0c2370-b21e-5a18-ada5-68072e932c52
+                role: system
+                text: 你是一个AI技术内容提炼专家。从输入文本中提取最有价值的AI干货技巧，用简洁的语言概括。
+              - id: 84cc6569-8c03-527b-9e65-4a86a20f4dea
+                role: user
+                text: '{{#start-iter-inner.item#}}'
+              context:
+                enabled: false
+                variable_selector: []
+              memory:
+                role_prefix:
+                  user: ''
+                  assistant: ''
+                window:
+                  enabled: false
+                  size: 10
+              variables: []
+          edges:
+          - id: edge-iter-inner
+            source: start-iter-inner
+            target: llm-iter-inner
+            sourceHandle: source
+            targetHandle: target
+            type: custom
+            zIndex: 0
+            data:
+              isInIteration: true
+              sourceType: start
+              targetType: llm
+        variables: []
+    - id: end
+      type: custom
+      width: 244
+      height: 54
+      position:
+        x: 980
+        y: 162
+      positionAbsolute:
+        x: 980
+        y: 162
+      data:
+        type: end
+        title: 结束
+        desc: ''
+        selected: false
+        outputs:
+        - value_selector:
+          - iteration-refine
+          - output
+          variable: final_result
+    edges:
+    - id: edge-start-code
+      source: start
+      target: code-clean
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: start
+        targetType: code
+    - id: edge-code-iter
+      source: code-clean
+      target: iteration-refine
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: code
+        targetType: iteration
+    - id: edge-iter-end
+      source: iteration-refine
+      target: end
+      sourceHandle: source
+      targetHandle: target
+      type: custom
+      zIndex: 0
+      data:
+        isInIteration: false
+        sourceType: iteration
+        targetType: end
